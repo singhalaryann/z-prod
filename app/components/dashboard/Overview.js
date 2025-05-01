@@ -9,7 +9,7 @@ const Overview = () => {
     {
       title: "Total Users",
       value: "124.8K",
-      change: "+12.5%",
+      change: "+12.50%",
       isPositive: true,
       icon: Users,
     },
