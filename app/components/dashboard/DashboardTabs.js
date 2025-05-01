@@ -10,6 +10,8 @@ const DashboardTabs = ({
   onTabChange,
   children,
   experimentContent,
+  selectedTime,
+  onTimeChange,
 }) => {
   return (
     <div className={styles.tabContainer}>
@@ -63,7 +65,7 @@ const DashboardTabs = ({
         {activeTab === "insights"
           ? children
           : activeTab === "overview"
-          ? <Overview />
+          ? <Overview selectedTime={selectedTime} />
           : experimentContent
         }
       </div>
