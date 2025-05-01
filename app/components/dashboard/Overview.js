@@ -14,47 +14,58 @@ const Overview = ({ selectedTime = "30D" }) => {
   // Cache duration: 5 minutes in milliseconds
   const CACHE_DURATION = 5 * 60 * 1000;
 
-  // Modify the getDateFilter function to always include a previous period for comparison
-  const getDateFilter = (time) => {
-    // Default to 30D if time is undefined or null
-    if (!time) {
-      return { type: "last", days: 30 };
+  // Convert any time period to start/end dates
+  const getDatesForPeriod = (selectedTime) => {
+    const end = new Date();
+    let start = new Date();
+
+    switch(selectedTime) {
+      case "Today":
+        start = new Date();
+        break;
+      case "Yesterday":
+        start = new Date();
+        start.setDate(start.getDate() - 1);
+        end.setDate(end.getDate() - 1);
+        break;
+      case "7D":
+        start.setDate(start.getDate() - 7);
+        break;
+      case "30D":
+        start.setDate(start.getDate() - 30);
+        break;
+      case "3M":
+        start.setDate(start.getDate() - 90);
+        break;
+      case "6M":
+        start.setDate(start.getDate() - 180);
+        break;
+      case "12M":
+        start.setDate(start.getDate() - 365);
+        break;
+      default:
+        if (selectedTime && typeof selectedTime === 'string' && selectedTime.includes(" - ")) {
+          const [startStr, endStr] = selectedTime.split(" - ");
+          start = new Date(startStr);
+          end = new Date(endStr);
+        } else {
+          start.setDate(start.getDate() - 30);
+        }
     }
 
-    switch(time) {
-      case "Today":
-        return { type: "last", days: 2 };  // Changed from 1 to 2 to get today and yesterday
-      case "Yesterday":
-        return { type: "last", days: 3 };  // Changed from 2 to 3 to get yesterday, day before, and today
-      case "7D":
-        return { type: "last", days: 7 };
-      case "30D":
-        return { type: "last", days: 30 };
-      case "3M":
-        return { type: "last", days: 90 };
-      case "6M":
-        return { type: "last", days: 180 };
-      case "12M":
-        return { type: "last", days: 365 };
-      default:
-        // Only try to split if it contains the separator
-        if (time && typeof time === 'string' && time.includes(" - ")) {
-          const [start, end] = time.split(" - ");
-          const formattedStart = formatDate(start.trim());
-          const formattedEnd = formatDate(end.trim());
-          
-          // Only return custom range if both dates are valid
-          if (formattedStart && formattedEnd) {
-            return { 
-              type: "between", 
-              start_date: formattedStart,
-              end_date: formattedEnd
-            };
-          }
-        }
-        // Default fallback
-        return { type: "last", days: 30 };
-    }
+    const dateRange = {
+      start_date: formatDate(start),
+      end_date: formatDate(end)
+    };
+
+    console.log(`
+📅 Date Range for ${selectedTime}:
+----------------------------
+Start Date: ${dateRange.start_date}
+End Date:   ${dateRange.end_date}
+  `);
+
+    return dateRange;
   };
 
   // Helper to format dates for API
@@ -126,14 +137,27 @@ const Overview = ({ selectedTime = "30D" }) => {
     }
   };
 
-  // Update fetchAndStore7DayRetention with more detailed logs
+  // Update fetchAndStore7DayRetention to use between format
   const fetchAndStore7DayRetention = async () => {
     try {
-      console.log('🔄 [Classic Retention] Starting fetch for selected period:', selectedTime);
+      console.log(`
+🎯 Fetching Classic Retention
+============================`);
       
-      // Use the same date filter as the main overview
-      const dateFilter = getDateFilter(selectedTime);
-      console.log('📅 [Classic Retention] Using date filter:', dateFilter);
+      const dateRange = getDatesForPeriod(selectedTime);
+      const betweenFilter = {
+        type: "between",
+        ...dateRange
+      };
+      
+      console.log(`
+📊 API Request:
+-------------
+Time Period: ${selectedTime}
+Filter Type: ${betweenFilter.type}
+Start Date:  ${betweenFilter.start_date}
+End Date:    ${betweenFilter.end_date}
+      `);
 
       const response = await fetch('https://get-metrics-nrosabqhla-uc.a.run.app', {
         method: 'POST',
@@ -145,7 +169,7 @@ const Overview = ({ selectedTime = "30D" }) => {
           metrics: ["classic_retention"],
           user_id: userId,
           game_id: "ludogoldrush",
-          date_filter: dateFilter  // Use the selected time period's filter
+          date_filter: betweenFilter
         })
       });
 
@@ -154,56 +178,43 @@ const Overview = ({ selectedTime = "30D" }) => {
       }
 
       const data = await response.json();
-      console.log('📊 [Classic Retention] Raw API response:', JSON.stringify(data, null, 2));
       
-      if (!data?.metrics?.[0]?.series) {
-        console.log('❌ [Classic Retention] No series data found in response');
-        throw new Error('Invalid retention data format');
-      }
-
       // Find Day 7 retention series
       const sevenDaySeries = data.metrics[0].series.find(s => s.name === "Day 7 Classic Retention");
-      console.log('📈 [Classic Retention] Day 7 series found:', sevenDaySeries);
-
-      if (!sevenDaySeries?.values) {
-        console.log('❌ [Classic Retention] No values in Day 7 series');
-        throw new Error('No Day 7 retention data available');
-      }
-
+      
       // Filter out zero values
       const nonZeroValues = sevenDaySeries.values.filter(value => value > 0);
-      console.log('🔍 [Classic Retention] Non-zero values:', nonZeroValues);
+      
+      console.log(`
+📈 Day 7 Retention Values:
+----------------------
+Total Values:     ${sevenDaySeries.values.length}
+Non-Zero Values:  ${nonZeroValues.length}
+Values:          [${nonZeroValues.join(', ')}]
+      `);
 
       if (nonZeroValues.length === 0) {
-        console.log('⚠️ [Classic Retention] No non-zero values found');
+        console.log('⚠️  No non-zero values found in the period');
         return { current: 0, previous: 0 };
       }
 
-      // Get newest (first) and oldest (last) non-zero values
       const currentValue = nonZeroValues[0];
       const previousValue = nonZeroValues[nonZeroValues.length - 1];
-
-      console.log('�� [Classic Retention] Current value (newest):', currentValue);
-      console.log('📦 [Classic Retention] Previous value (oldest):', previousValue);
-
-      const result = {
-        current: currentValue,
-        previous: previousValue
-      };
-
       const delta = calculateDelta(currentValue, previousValue);
-      console.log('✅ [Classic Retention] Final data:', {
-        current: currentValue,
-        previous: previousValue,
-        delta: delta,
-        timeRange: selectedTime,
-        explanation: `Delta ${delta}% calculated from newest (${currentValue}%) vs oldest (${previousValue}%) in ${selectedTime} period`
-      });
 
-      return result;
+      console.log(`
+🔄 Classic Retention Calculation:
+----------------------------
+Newest Value:   ${currentValue}%
+Oldest Value:   ${previousValue}%
+Delta:          ${delta}%
+Direction:      ${delta >= 0 ? '📉 Decrease' : '📈 Increase'}
+      `);
+
+      return { current: currentValue, previous: previousValue };
 
     } catch (err) {
-      console.error('❌ [Classic Retention] Error:', err);
+      console.error('❌ Classic Retention Error:', err);
       return { current: 0, previous: 0 };
     }
   };
@@ -234,12 +245,10 @@ const Overview = ({ selectedTime = "30D" }) => {
         if (!isMounted) return;
         setLoading(true);
         
-        // Validate required parameters
         if (!userId) {
           throw new Error('User ID is required');
         }
 
-        // Check cache first
         const cacheKey = `overview_cache_${selectedTime}_${userId}`;
         const cachedData = localStorage.getItem(cacheKey);
         
@@ -256,15 +265,20 @@ const Overview = ({ selectedTime = "30D" }) => {
           }
         }
 
-        const dateFilter = getDateFilter(selectedTime);
-        console.log('Overview: Using date filter:', dateFilter);
-        
-        console.log('Overview: Making API request with:', {
-          metrics: ["dau", "new_players", "classic_retention", "avg_session_length"],
-          user_id: userId,
-          game_id: "ludogoldrush",
-          date_filter: dateFilter
-        });
+        const dateRange = getDatesForPeriod(selectedTime);
+        const betweenFilter = {
+          type: "between",
+          ...dateRange
+        };
+
+        console.log(`
+🔍 Overview API Request:
+--------------------
+Time Period: ${selectedTime}
+Filter Type: ${betweenFilter.type}
+Start Date:  ${betweenFilter.start_date}
+End Date:    ${betweenFilter.end_date}
+        `);
 
         const response = await fetch('https://get-metrics-nrosabqhla-uc.a.run.app', {
           method: 'POST',
@@ -273,10 +287,10 @@ const Overview = ({ selectedTime = "30D" }) => {
             'Accept': 'application/json'
           },
           body: JSON.stringify({
-            metrics: ["dau", "new_players", "classic_retention", "avg_session_length"],
+            metrics: ["dau", "new_players", "avg_session_length"],
             user_id: userId,
             game_id: "ludogoldrush",
-            date_filter: dateFilter
+            date_filter: betweenFilter
           })
         });
 
@@ -285,12 +299,24 @@ const Overview = ({ selectedTime = "30D" }) => {
         }
 
         const data = await response.json();
-        console.log('Overview: Received API response:', data);
         
-        if (!data || !Array.isArray(data.metrics)) {
-          throw new Error('Invalid response format from API');
-        }
-        
+        // Log each metric's values and calculations
+        ['dau', 'new_players', 'avg_session_length'].forEach(metric => {
+          const values = data.metrics.find(m => m.metric_id === metric)?.values || [];
+          const newest = values[0] || 0;
+          const oldest = values[values.length - 1] || 0;
+          const delta = calculateDelta(newest, oldest);
+
+          console.log(`
+📈 ${metric.toUpperCase()}:
+----------------------
+Newest Value:   ${formatValue(metric, newest)}
+Oldest Value:   ${formatValue(metric, oldest)}
+Delta:          ${delta}%
+Direction:      ${delta >= 0 ? '📉 Decrease' : '📈 Increase'}
+          `);
+        });
+
         const processedData = {
           metrics: data.metrics.reduce((acc, metric) => {
             if (metric && metric.metric_id) {
@@ -315,14 +341,10 @@ const Overview = ({ selectedTime = "30D" }) => {
           setOverviewData(processedData);
         }
       } catch (err) {
-        if (isMounted) {
-          console.error('❌ [Overview] Error:', err);
-          setError(err.message);
-        }
+        console.error('❌ Overview Error:', err);
+        setError(err.message);
       } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
 
