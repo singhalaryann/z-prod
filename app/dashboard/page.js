@@ -18,7 +18,13 @@ export default function Dashboard() {
   const { userId } = useAuth();
 
   // State management
-  const [selectedTime, setSelectedTime] = useState("30D");
+  const [selectedTime, setSelectedTime] = useState(() => {
+    // Load saved time filter from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('selectedTime') || "30D";
+    }
+    return "30D";
+  });
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
   const searchParams = useSearchParams();
@@ -391,6 +397,10 @@ export default function Dashboard() {
   // Handle time filter changes - Update both date filter formats
   const handleTimeChange = (newTime) => {
     setSelectedTime(newTime);
+    // Save selected time to localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('selectedTime', newTime);
+    }
     
     // Create global format date filter based on selection
     let newGlobalDateFilter;
