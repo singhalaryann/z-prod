@@ -13,6 +13,11 @@ export function AuthProvider({ children }) {
     const storedUserId = localStorage.getItem('userId');
     if (storedUserId) {
       setUserId(storedUserId);
+    } else {
+      // Initialize with default userId for demo mode
+      const defaultUserId = 'a724a284-dd80-4ff2-8d0a-b36bff0fa426';
+      localStorage.setItem('userId', defaultUserId);
+      setUserId(defaultUserId);
     }
     setIsLoading(false);
   }, []);

@@ -34,11 +34,15 @@ export default function InsightPage() {
     const fetchInsightData = async () => {
       const insightId = searchParams.get("id");
       console.log("🔍 Fetching insight for id:", insightId);
+      
+      // Critical fix: Always set loading to false before redirecting
       if (!userId || !insightId) {
         console.log("⚠️ Missing userId or insightId, redirecting to dashboard");
+        setLoading(false); // Ensure loading state is reset before redirect
         router.push("/dashboard");
         return;
       }
+      
       setLoading(true);
       try {
         const response = await fetch(
