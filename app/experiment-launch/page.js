@@ -17,7 +17,7 @@ export default function ExperimentLaunch() {
     // Auto redirect after 3 seconds
     const timer = setTimeout(() => {
       console.log("Redirecting to experiment dashboard...");
-      router.push("/dashboard?tab=experiment");
+      router.push("/?tab=experiment");
     }, 5000);
 
     return () => clearTimeout(timer);

@@ -11,6 +11,7 @@ import { useAuth } from "./context/AuthContext";
 import ExperimentContent from "./components/dashboard/ExperimentContent";
 import { useState } from "react";
 import { Clock, Loader2 } from "lucide-react";
+import { GAME_ID } from './config';
 
 // Import all the necessary components and functionality from dashboard/page.js
 export default function Home() {
@@ -114,7 +115,7 @@ export default function Home() {
   const [generationError, setGenerationError] = useState(null);
 
   // Fixed game ID for insights as provided
-  const GAME_ID = "ludogoldrush";
+  // const GAME_ID = "ludogoldrush";
 
   // Cache duration in milliseconds (e.g., 5 minutes)
   const CACHE_DURATION = 5 * 60 * 1000;

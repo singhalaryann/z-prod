@@ -7,6 +7,7 @@ import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import styles from '../../styles/z_Experiment.module.css';
+import { GAME_ID } from '../config';
 
 export default function ExperimentPage() {
   const router = useRouter();
@@ -15,7 +16,7 @@ export default function ExperimentPage() {
   const [loading, setLoading] = useState(true);
   const [experiments, setExperiments] = useState([]);
   const [insightId, setInsightId] = useState(null);
-  const [gameId, setGameId] = useState('ludogoldrush');
+  const [gameId, setGameId] = useState(GAME_ID);
   
   // State to track which experiment cards are expanded
   const [expandedCards, setExpandedCards] = useState({});
@@ -37,7 +38,7 @@ export default function ExperimentPage() {
       
       if (!userId || !insight) {
         console.log('⚠️ Missing userId or insightId, redirecting to dashboard');
-        router.push('/dashboard');
+        router.push('/');
         return;
       }
       
@@ -50,7 +51,7 @@ export default function ExperimentPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             insight_id: insight,
-            game_id: gameId,
+            game_id: GAME_ID,
           }),
         });
         
@@ -96,7 +97,7 @@ export default function ExperimentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           insight_id: insightId,
-          game_id: gameId,
+          game_id: GAME_ID,
         }),
       });
       
@@ -129,7 +130,7 @@ export default function ExperimentPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             insight_id: insightId,
-            game_id: gameId,
+            game_id: GAME_ID,
           }),
         });
         

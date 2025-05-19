@@ -19,7 +19,7 @@ const Sidebar = () => {
   // const [redirectPath, setRedirectPath] = useState(null);
   
   // Determine active page for menu item highlighting
-  const isDashboardActive = pathname === "/dashboard";
+  const isDashboardActive = pathname === "/";
   const isAnalyticsActive = pathname === "/analytics";
   
   // Handle navigation with authentication check
@@ -57,10 +57,10 @@ const Sidebar = () => {
         <div className={styles.menuItem}>
           <div
             className={`${styles.menuLink} ${isDashboardActive ? styles.active : ""}`}
-            onClick={() => handleNavigation("/dashboard")}
+            onClick={() => handleNavigation("/")}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => e.key === "Enter" && handleNavigation("/dashboard")}
+            onKeyDown={(e) => e.key === "Enter" && handleNavigation("/")}
           >
             <div className={styles.menuIcon}>
               <Image

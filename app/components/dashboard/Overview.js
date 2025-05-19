@@ -5,6 +5,7 @@ import styles from "../../../styles/Overview.module.css";
 import { useAuth } from "../../context/AuthContext";
 // ADDED: Import GetMetrics component
 import GetMetrics from "./GetMetrics";
+import { GAME_ID } from '../../config';
 
 const Overview = ({ selectedTime, apiDateFilter, globalDateFilter }) => { // UPDATED: Added globalDateFilter prop
   const { userId } = useAuth();
@@ -20,7 +21,7 @@ const Overview = ({ selectedTime, apiDateFilter, globalDateFilter }) => { // UPD
   const [graphsLoading, setGraphsLoading] = useState(true);
   
   // Game ID constant
-  const GAME_ID = "ludogoldrush";
+  // const GAME_ID = "ludogoldrush";
   
   // Cache duration: 5 minutes in milliseconds
   const CACHE_DURATION = 5 * 60 * 1000;

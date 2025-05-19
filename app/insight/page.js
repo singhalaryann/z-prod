@@ -9,6 +9,7 @@ import GetMetrics from "../components/dashboard/GetMetrics";
 import { Calendar, ChevronDown, ChevronUp, BarChart2, Info, X } from "lucide-react";
 import Image from "next/image";
 import styles from "../../styles/Insight.module.css";
+import { GAME_ID } from '../config';
 
 export default function InsightPage() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function InsightPage() {
   const [loading, setLoading] = useState(true);
   const [insight, setInsight] = useState(null);
   const [dateFilter, setDateFilter] = useState(null);
-  const [gameId, setGameId] = useState("ludogoldrush");
+  const [gameId, setGameId] = useState(GAME_ID);
   const [userIds, setUserIds] = useState([]);
 
   // State to track which insights have their graphs visible
@@ -37,7 +38,7 @@ export default function InsightPage() {
       if (!userId || !insightId) {
         console.log("⚠️ Missing userId or insightId, redirecting to dashboard");
         setLoading(false); // Ensure loading state is reset before redirect
-        router.push("/dashboard");
+        router.push("/");
         return;
       }
       setLoading(true);
@@ -49,7 +50,7 @@ export default function InsightPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               // user_id: userId,
-              game_id: "ludogoldrush",
+              game_id: GAME_ID,
               insight_ids: [insightId],
             }),
           }
@@ -65,7 +66,7 @@ export default function InsightPage() {
           if (selectedInsight.query) {
             console.log("Query data:", selectedInsight.query);
             setDateFilter(selectedInsight.query.date_filter || null);
-            setGameId(selectedInsight.query.game_id || "ludogoldrush");
+            setGameId(selectedInsight.query.game_id || GAME_ID);
             setUserIds(selectedInsight.query.user_ids || []);
           }
         } else {
@@ -203,7 +204,7 @@ export default function InsightPage() {
         <p>The requested insight could not be found or is unavailable.</p>
         <button
           className={styles.returnButton}
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/")}
         >
           Return to Dashboard
         </button>
