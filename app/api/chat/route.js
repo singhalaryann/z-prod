@@ -14,8 +14,47 @@ const openai = new OpenAI({
 // Store threads by user ID
 const userThreads = new Map();
 
-export async function GET() {
-  return NextResponse.json({ status: "API route is working" });
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const threadId = searchParams.get('threadId');
+  if (!threadId) {
+    return NextResponse.json({ error: 'threadId is required' }, { status: 400 });
+  }
+  try {
+    // Fetch all messages for the thread
+    const msgs = await openai.beta.threads.messages.list(threadId);
+    // Reconstruct chat history
+    const chat = [];
+    for (const msg of msgs.data.reverse()) { // reverse to get chronological order
+      if (msg.role === 'user') {
+        chat.push({ content: msg.content[0]?.text?.value || '', sender: 'human' });
+      } else if (msg.role === 'assistant') {
+        let content = '';
+        let images = [];
+        for (const chunk of msg.content) {
+          if (chunk.type === 'text') {
+            content += chunk.text.value;
+          } else if (chunk.type === 'image_file') {
+            try {
+              const fileId = chunk.image_file.file_id;
+              const imageContent = await openai.files.content(fileId);
+              const buffer = Buffer.from(await imageContent.arrayBuffer());
+              const base64Image = buffer.toString('base64');
+              const imageUrl = `data:image/png;base64,${base64Image}`;
+              images.push(imageUrl);
+            } catch (err) {
+              console.error('Error getting image:', err);
+            }
+          }
+        }
+        chat.push({ content, sender: 'ai', ...(images.length > 0 ? { images } : {}) });
+      }
+    }
+    return NextResponse.json({ chat });
+  } catch (err) {
+    console.error('❌ API Error:', err);
+    return NextResponse.json({ error: err.message || 'Unknown error' }, { status: 500 });
+  }
 }
 
 export async function POST(request) {
@@ -35,6 +74,7 @@ export async function POST(request) {
     const formData = await request.formData();
     const message = formData.get("message")?.toString() || "";
     const userId = formData.get("userId")?.toString() || "default";
+    const clientThreadId = formData.get("threadId")?.toString() || null;
 
     if (!message.trim()) {
       return NextResponse.json(
@@ -99,27 +139,19 @@ export async function POST(request) {
     }
 
     // 4. get or create thread for user
-    let threadId = userThreads.get(userId);
-    if (!threadId) {
+    let threadId = null;
+    if (clientThreadId && userThreads.has(userId) && userThreads.get(userId) === clientThreadId) {
+      threadId = clientThreadId;
+      console.log("✅ Using thread from client/localStorage:", threadId);
+    } else if (userThreads.has(userId)) {
+      threadId = userThreads.get(userId);
+      console.log("✅ Using existing thread for user:", threadId);
+    } else {
       console.log("🧵 Creating new thread for user:", userId);
       const thread = await openai.beta.threads.create();
       threadId = thread.id;
       userThreads.set(userId, threadId);
       console.log("✅ Thread created:", threadId);
-    } else {
-      console.log("✅ Using existing thread:", threadId);
-      
-      // Check for active runs and wait for them to complete
-      const runs = await openai.beta.threads.runs.list(threadId);
-      const activeRun = runs.data.find(run => 
-        run.status === 'in_progress' || run.status === 'queued'
-      );
-      
-      if (activeRun) {
-        console.log("⏳ Waiting for active run to complete:", activeRun.id);
-        await openai.beta.threads.runs.cancel(threadId, activeRun.id);
-        console.log("✅ Cancelled active run");
-      }
     }
 
     // 5. upload files if any
@@ -290,6 +322,7 @@ export async function POST(request) {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
+          'X-Thread-Id': threadId,
         }
       }
     );

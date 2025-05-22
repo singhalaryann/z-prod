@@ -64,6 +64,7 @@ export default function IdeationChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isFileUploadOpen, setIsFileUploadOpen] = useState(false);
+  const [threadId, setThreadId] = useState(null);
   
   // UPDATED: Added states for login modal and prompt tracking
   const [promptCount, setPromptCount] = useState(0);
@@ -131,8 +132,46 @@ export default function IdeationChat() {
   ];
 
   useEffect(() => {
+    // Restore threadId and chat history from localStorage
+    const storedThreadId = localStorage.getItem('threadId');
+    if (storedThreadId) setThreadId(storedThreadId);
+
+    async function restoreChat() {
+      if (storedThreadId) {
+        try {
+          const res = await fetch(`/api/chat?threadId=${storedThreadId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.chat) {
+              setMessages(data.chat);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to restore chat from backend:', e);
+        }
+      }
+      // Fallback to localStorage
+      const storedChat = localStorage.getItem('chatHistory');
+      if (storedChat) setMessages(JSON.parse(storedChat));
+    }
+    restoreChat();
+  }, []);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Save chat history to localStorage, including images
+    try {
+      localStorage.setItem('chatHistory', JSON.stringify(messages));
+    } catch (e) {
+      console.error('Failed to save chat history:', e);
+    }
   }, [messages]);
+
+  useEffect(() => {
+    // Save threadId to localStorage
+    if (threadId) localStorage.setItem('threadId', threadId);
+  }, [threadId]);
 
   // UPDATED: Handler for successful login
   const handleLoginSuccess = () => {
@@ -173,6 +212,7 @@ export default function IdeationChat() {
     });
     formData.append('message', input);
     formData.append('userId', userId || 'default');
+    if (threadId) formData.append('threadId', threadId);
 
     setMessages((prev) => [...prev, { 
       content: input + (uploadedFiles.length > 0 ? 
@@ -188,6 +228,12 @@ export default function IdeationChat() {
         method: "POST",
         body: formData,
       });
+
+      // Update threadId from response header if present
+      const newThreadId = response.headers.get('X-Thread-Id');
+      if (newThreadId && newThreadId !== threadId) {
+        setThreadId(newThreadId);
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -205,7 +251,6 @@ export default function IdeationChat() {
 
         buffer += decoder.decode(value, { stream: true });
         let lines = buffer.split('\n');
-        // Keep the last line in the buffer if it's incomplete
         buffer = lines.pop();
 
         for (const line of lines) {
@@ -214,9 +259,7 @@ export default function IdeationChat() {
               const data = JSON.parse(line.slice(6));
               
               if (data.type === 'text') {
-                // Accumulate the text content
                 currentMessage.content += data.content;
-                // Update the last message with accumulated content
                 setMessages(prev => {
                   const newMessages = [...prev];
                   const lastMessage = newMessages[newMessages.length - 1];
@@ -228,7 +271,6 @@ export default function IdeationChat() {
                   return newMessages;
                 });
               } else if (data.type === 'image') {
-                // Add image to the current message
                 setMessages(prev => {
                   const newMessages = [...prev];
                   const lastMessage = newMessages[newMessages.length - 1];
@@ -236,14 +278,16 @@ export default function IdeationChat() {
                     if (!lastMessage.images) {
                       lastMessage.images = [];
                     }
-                    lastMessage.images.push(data.image);
+                    // Prevent duplicate images
+                    if (!lastMessage.images.includes(data.image)) {
+                      lastMessage.images.push(data.image);
+                    }
                   }
                   return newMessages;
                 });
               } else if (data.type === 'error') {
                 throw new Error(data.message);
               } else if (data.type === 'done') {
-                // Message is complete, reset current message
                 currentMessage = { content: '', sender: 'ai' };
               }
             } catch (e) {
