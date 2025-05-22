@@ -7,7 +7,12 @@ import styles from "../../../styles/Sidebar.module.css";
 import { useAuth } from "../../context/AuthContext";
 import LoginModal from "../common/LoginModal";
 
-const Sidebar = () => {
+const Sidebar = ({
+  chatThreads = [],
+  selectedThreadId = null,
+  handleSelectThread = () => {},
+  handleNewChat = () => {},
+}) => {
   // Initialize routing and authentication hooks
   const router = useRouter();
   const pathname = usePathname();
@@ -97,6 +102,26 @@ const Sidebar = () => {
             </div>
             <span className={styles.menuText}>User Analytics</span>
           </div>
+        </div>
+        {/* Chat Threads Dropdown */}
+        <div className={styles.chatSection}>
+          <div className={styles.chatLabel}>Chats</div>
+          <button className={styles.chatButton} onClick={handleNewChat}>
+            + New Chat
+          </button>
+          <select
+            className={styles.chatSelect}
+            value={selectedThreadId || ''}
+            onChange={e => handleSelectThread(e.target.value)}
+          >
+            <option value='' disabled>Select a chat</option>
+            {[...chatThreads].reverse().map(tid => (
+              <option key={tid} value={tid}>{tid}</option>
+            ))}
+            {selectedThreadId && !chatThreads.includes(selectedThreadId) && (
+              <option value={selectedThreadId}>{selectedThreadId}</option>
+            )}
+          </select>
         </div>
       </div>
       

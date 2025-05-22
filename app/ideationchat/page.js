@@ -58,6 +58,19 @@ const FileItem = ({ file, onRemove }) => (
   </div>
 );
 
+// Utility to add a threadId to localStorage and state if not present
+function addThreadIdToStorage(threadId, setChatThreads) {
+  if (!threadId) return;
+  const stored = JSON.parse(localStorage.getItem('chatThreads') || '[]');
+  if (!stored.includes(threadId)) {
+    const updated = [...stored, threadId];
+    localStorage.setItem('chatThreads', JSON.stringify(updated));
+    setChatThreads(updated);
+  } else {
+    setChatThreads(stored);
+  }
+}
+
 export default function IdeationChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -65,6 +78,8 @@ export default function IdeationChat() {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isFileUploadOpen, setIsFileUploadOpen] = useState(false);
   const [threadId, setThreadId] = useState(null);
+  const [chatThreads, setChatThreads] = useState([]);
+  const [selectedThreadId, setSelectedThreadId] = useState(null);
   
   // UPDATED: Added states for login modal and prompt tracking
   const [promptCount, setPromptCount] = useState(0);
@@ -131,10 +146,13 @@ export default function IdeationChat() {
     }
   ];
 
+  // On mount, load thread list and restore chat
   useEffect(() => {
-    // Restore threadId and chat history from localStorage
     const storedThreadId = localStorage.getItem('threadId');
+    const storedThreads = JSON.parse(localStorage.getItem('chatThreads') || '[]');
+    setChatThreads(storedThreads);
     if (storedThreadId) setThreadId(storedThreadId);
+    setSelectedThreadId(storedThreadId);
 
     async function restoreChat() {
       if (storedThreadId) {
@@ -144,6 +162,8 @@ export default function IdeationChat() {
             const data = await res.json();
             if (data.chat) {
               setMessages(data.chat);
+              // Always add the threadId to storage and state
+              addThreadIdToStorage(storedThreadId, setChatThreads);
               return;
             }
           }
@@ -151,7 +171,6 @@ export default function IdeationChat() {
           console.error('Failed to restore chat from backend:', e);
         }
       }
-      // Fallback to localStorage
       const storedChat = localStorage.getItem('chatHistory');
       if (storedChat) setMessages(JSON.parse(storedChat));
     }
@@ -168,9 +187,16 @@ export default function IdeationChat() {
     }
   }, [messages]);
 
+  // When a new threadId is set, add it to chatThreads and localStorage robustly
   useEffect(() => {
-    // Save threadId to localStorage
-    if (threadId) localStorage.setItem('threadId', threadId);
+    if (threadId) {
+      addThreadIdToStorage(threadId, setChatThreads);
+    }
+  }, [threadId]);
+
+  // When threadId changes, update selectedThreadId
+  useEffect(() => {
+    if (threadId) setSelectedThreadId(threadId);
   }, [threadId]);
 
   // UPDATED: Handler for successful login
@@ -195,6 +221,34 @@ export default function IdeationChat() {
     }
   };
 
+  // When user selects a thread from dropdown
+  const handleSelectThread = async (tid) => {
+    setSelectedThreadId(tid);
+    setThreadId(tid);
+    localStorage.setItem('threadId', tid);
+    try {
+      const res = await fetch(`/api/chat?threadId=${tid}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.chat) {
+          setMessages(data.chat);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load selected chat:', e);
+    }
+  };
+
+  // Start a new chat (new thread)
+  const handleNewChat = async () => {
+    setMessages([]);
+    setThreadId(null);
+    setSelectedThreadId(null);
+    localStorage.removeItem('threadId');
+    localStorage.removeItem('chatHistory');
+    // The next message sent will create a new thread and add it to chatThreads
+  };
+
   const handleSend = async () => {
     if ((!input.trim() && uploadedFiles.length === 0) || isLoading) return;
 
@@ -212,6 +266,7 @@ export default function IdeationChat() {
     });
     formData.append('message', input);
     formData.append('userId', userId || 'default');
+    // Only include threadId if it is not null (for new chat, threadId is null)
     if (threadId) formData.append('threadId', threadId);
 
     setMessages((prev) => [...prev, { 
@@ -233,6 +288,9 @@ export default function IdeationChat() {
       const newThreadId = response.headers.get('X-Thread-Id');
       if (newThreadId && newThreadId !== threadId) {
         setThreadId(newThreadId);
+        setSelectedThreadId(newThreadId);
+        addThreadIdToStorage(newThreadId, setChatThreads);
+        localStorage.setItem('threadId', newThreadId);
       }
 
       if (!response.ok) {
@@ -278,7 +336,6 @@ export default function IdeationChat() {
                     if (!lastMessage.images) {
                       lastMessage.images = [];
                     }
-                    // Prevent duplicate images
                     if (!lastMessage.images.includes(data.image)) {
                       lastMessage.images.push(data.image);
                     }
@@ -314,7 +371,12 @@ export default function IdeationChat() {
     <div className={styles.container}>
       <Header />
       <div className={styles.mainLayout}>
-        <Sidebar />
+        <Sidebar
+          chatThreads={chatThreads}
+          selectedThreadId={selectedThreadId}
+          handleSelectThread={handleSelectThread}
+          handleNewChat={handleNewChat}
+        />
         <main className={styles.mainContent}>
           <div className={styles.chatContainer}>
             <div className={styles.glassWrapper}>
