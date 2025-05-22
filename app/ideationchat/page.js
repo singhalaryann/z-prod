@@ -157,13 +157,11 @@ export default function IdeationChat() {
   };
 
   const handleSend = async () => {
-    // UPDATED: Added login modal trigger after certain number of prompts
     if ((!input.trim() && uploadedFiles.length === 0) || isLoading) return;
 
     const newPromptCount = promptCount + 1;
     setPromptCount(newPromptCount);
     
-    // UPDATED: Show login modal after 2 prompts if not logged in
     if (newPromptCount >= 2 && !userId) {
       setShowLoginModal(true);
       return;
@@ -174,6 +172,7 @@ export default function IdeationChat() {
       formData.append('files', file);
     });
     formData.append('message', input);
+    formData.append('userId', userId || 'default');
 
     setMessages((prev) => [...prev, { 
       content: input + (uploadedFiles.length > 0 ? 
@@ -185,21 +184,80 @@ export default function IdeationChat() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("https://generate-direct-flnr5jia5q-uc.a.run.app", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         body: formData,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.chat_id) {
-          router.push(`/analysis?chat=${data.chat_id}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let currentMessage = { content: '', sender: 'ai' };
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        let lines = buffer.split('\n');
+        // Keep the last line in the buffer if it's incomplete
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'text') {
+                // Accumulate the text content
+                currentMessage.content += data.content;
+                // Update the last message with accumulated content
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  if (lastMessage && lastMessage.sender === 'ai') {
+                    lastMessage.content = currentMessage.content;
+                  } else {
+                    newMessages.push({ ...currentMessage });
+                  }
+                  return newMessages;
+                });
+              } else if (data.type === 'image') {
+                // Add image to the current message
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  if (lastMessage && lastMessage.sender === 'ai') {
+                    if (!lastMessage.images) {
+                      lastMessage.images = [];
+                    }
+                    lastMessage.images.push(data.image);
+                  }
+                  return newMessages;
+                });
+              } else if (data.type === 'error') {
+                throw new Error(data.message);
+              } else if (data.type === 'done') {
+                // Message is complete, reset current message
+                currentMessage = { content: '', sender: 'ai' };
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
         }
-      } else {
-        console.error("Network response not OK:", response.status);
       }
     } catch (err) {
       console.error("Error in handleSend:", err);
+      setMessages(prev => [...prev, { 
+        content: `Error: ${err.message}`,
+        sender: "system"
+      }]);
     } finally {
       setInput("");
       setUploadedFiles([]);
@@ -304,6 +362,11 @@ export default function IdeationChat() {
                   >
                     <div className={styles.messageContent}>
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      {msg.images && msg.images.map((image, imgIdx) => (
+                        <div key={imgIdx} className={styles.messageImage}>
+                          <img src={image} alt={`Generated visualization ${imgIdx + 1}`} />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

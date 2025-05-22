@@ -10,21 +10,18 @@ const Header = () => {
   const { userId, logout } = useAuth();
   const router = useRouter();
   
-  // COMMENTED: Logout functionality
-  // const handleLogout = () => {
-  //   logout();
-  //   router.push("/ideationchat");
-  // };
+  const handleLogout = () => {
+    logout();
+    router.push("/ideationchat");
+  };
   
-  // COMMENTED: AI Chat functionality
-  // const handleAIChat = () => {
-  //   router.push("/ideationchat");
-  // };
+  const handleAIChat = () => {
+    router.push("/ideationchat");
+  };
 
-  // const handleKnowledgebase = () => {
-  // // Add this new handler
-  // router.push("/knowledgebase");
-  // };
+  const handleKnowledgebase = () => {
+    router.push("/knowledgebase");
+  };
 
   return (
     <header className={styles.header}>
@@ -40,9 +37,21 @@ const Header = () => {
         </div>
       </div>
       <div className={styles.rightSection}>
-        {/* REMOVED: AI Chat button */}
+        <button
+          onClick={handleAIChat}
+          className={styles.aiChatButton}
+        >
+          <Image
+            src="/ai_chat.svg"
+            alt="AI Chat"
+            width={20}
+            height={20}
+            className={styles.aiIcon}
+          />
+          <span>AI Chat</span>
+        </button>
         
-        {/* <button
+        <button
           onClick={handleKnowledgebase}
           className={styles.knowledgebaseButton}
         >
@@ -54,9 +63,8 @@ const Header = () => {
             className={styles.kbIcon}
           />
           <span>Knowledgebase</span>
-        </button>{" "} */}
+        </button>
         
-        {/* User block with hardcoded ID */}
         <div className={styles.userBlock}>
           <Image
             src="/user_icon.svg"
@@ -66,12 +74,11 @@ const Header = () => {
             className={styles.userIcon}
           />
           <span className={styles.userId}>a724a284-dd80-4ff2-8d0a-b36bff0fa426</span>
-          {/* COMMENTED: Logout button */}
-          {/* {userId && (
+          {userId && (
             <button onClick={handleLogout} className={styles.logoutButton}>
               <LogOut size={20} />
             </button>
-          )} */}
+          )}
         </div>
       </div>
     </header>

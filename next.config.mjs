@@ -6,11 +6,6 @@ const nextConfig = {
         source: '/',
         destination: '/dashboard',
         permanent: true,
-      },
-      {
-        source: '/ideationchat',
-        destination: '/dashboard',
-        permanent: false,
       }
     ];
   },

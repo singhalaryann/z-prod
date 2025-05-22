@@ -191,7 +191,7 @@ const ChatInterface = ({
       <div className={styles.chatContainer}>
 
         {/* Idea Card */}
-        {/* <div className={styles.ideaCard}>
+        <div className={styles.ideaCard}>
           <div className={styles.ideaHeader}>
             <div className={styles.ideaIconWrapper}>
               <Lightbulb className={styles.ideaIcon} size={20} />
@@ -201,7 +201,7 @@ const ChatInterface = ({
           <p className={styles.ideaDescription}>
             {ideaDescription || 'No idea description available'}
           </p>
-        </div> */}
+        </div>
 
         {/* Messages List */}
         <div className={styles.messagesContainer}>

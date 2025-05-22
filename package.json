@@ -19,6 +19,7 @@
     "@nivo/line": "^0.89.1",
     "@nivo/pie": "^0.89.1",
     "@react-spring/web": "^9.7.5",
+    "axios": "^1.9.0",
     "chart.js": "^4.4.8",
     "chartjs-adapter-date-fns": "^3.0.0",
     "chartjs-plugin-zoom": "^2.2.0",

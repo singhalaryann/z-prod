@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 // Pull in Blob and File constructors in Node
 import { Blob } from "buffer";
 import { File } from "node:buffer";
+import axios from "axios";
 
 export const runtime = 'nodejs';
 
@@ -10,9 +11,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// In-memory demo storage
-let assistantId = null;
-let threadsByUser = {};
+// Store threads by user ID
+const userThreads = new Map();
 
 export async function GET() {
   return NextResponse.json({ status: "API route is working" });
@@ -20,12 +20,28 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    // Validate OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("❌ OpenAI API key is not set");
+      return NextResponse.json(
+        { error: "OpenAI API key is not configured" },
+        { status: 500 }
+      );
+    }
+
     console.log("🔁 Chat API called");
 
     // 1. parse form-data
     const formData = await request.formData();
     const message = formData.get("message")?.toString() || "";
-    const userId  = formData.get("userId")?.toString()  || "default";
+    const userId = formData.get("userId")?.toString() || "default";
+
+    if (!message.trim()) {
+      return NextResponse.json(
+        { error: "Message is required" },
+        { status: 400 }
+      );
+    }
 
     console.log("📥 Message received:", message);
     console.log("👤 User ID:", userId);
@@ -43,53 +59,77 @@ export async function POST(request) {
     }
     console.log("🗂️ Files to process:", files.length);
 
-    // Clear existing assistant if needed
-    if (process.env.RESET_ASSISTANT === "true" && assistantId) {
-      console.log("🗑️ Deleting existing assistant...");
-      try {
-        await openai.beta.assistants.del(assistantId);
-        assistantId = null;
-        console.log("✅ Assistant deleted");
-      } catch (err) {
-        console.log("⚠️ Failed to delete assistant:", err.message);
-        assistantId = null;
-      }
-    }
-
-    // 3. create assistant once
+    // 3. create assistant if not exists
+    let assistantId = process.env.OPENAI_ASSISTANT_ID;
     if (!assistantId) {
       console.log("🛠️ Creating assistant...");
       const assistant = await openai.beta.assistants.create({
-        name: "Chat Helper",
+        name: "X-Gaming AI Assistant",
         instructions:
-          "You are a helpful assistant that can write code to solve problems with code_interpreter. When CSV files are uploaded, use code_interpreter to analyze the data and create visualizations.",
+          "You are a helpful gaming AI assistant that can analyze data with code_interpreter. When CSV files are uploaded, analyze the data and create visualizations. For questions about user metrics like DAU/WAU/MAU, use the get_metrics function to retrieve accurate data from our database. Focus on gaming industry insights, game development advice, and data analysis.",
         model: "gpt-4o",
-        tools: [{ type: "code_interpreter" }],
+        tools: [
+          { type: "code_interpreter" },
+          { 
+            type: "function",
+            function: {
+              name: "get_metrics",
+              description: "Get user metrics like DAU, WAU, MAU, and other gaming statistics from our database",
+              parameters: {
+                type: "object",
+                properties: {
+                  metric_type: {
+                    type: "string",
+                    enum: ["dau", "wau", "mau", "retention", "engagement", "statistics"],
+                    description: "The type of metric to retrieve"
+                  },
+                  time_period: {
+                    type: "string",
+                    description: "Time period for the metrics, e.g., 'past week', 'April', etc."
+                  }
+                },
+                required: ["metric_type"]
+              }
+            }
+          }
+        ]
       });
       assistantId = assistant.id;
       console.log("✅ Assistant created:", assistantId);
     }
 
-    // 4. create/reuse thread
-    if (!threadsByUser[userId]) {
+    // 4. get or create thread for user
+    let threadId = userThreads.get(userId);
+    if (!threadId) {
+      console.log("🧵 Creating new thread for user:", userId);
       const thread = await openai.beta.threads.create();
-      threadsByUser[userId] = thread.id;
-      console.log("🧵 Thread created:", thread.id);
+      threadId = thread.id;
+      userThreads.set(userId, threadId);
+      console.log("✅ Thread created:", threadId);
+    } else {
+      console.log("✅ Using existing thread:", threadId);
+      
+      // Check for active runs and wait for them to complete
+      const runs = await openai.beta.threads.runs.list(threadId);
+      const activeRun = runs.data.find(run => 
+        run.status === 'in_progress' || run.status === 'queued'
+      );
+      
+      if (activeRun) {
+        console.log("⏳ Waiting for active run to complete:", activeRun.id);
+        await openai.beta.threads.runs.cancel(threadId, activeRun.id);
+        console.log("✅ Cancelled active run");
+      }
     }
-    const threadId = threadsByUser[userId];
 
     // 5. upload files if any
     let attachments = [];
     if (files.length > 0) {
       const fileIds = [];
-      const fileTypes = {}; // Store file types for later reference
-
       for (const incomingBlob of files) {
-        // arrayBuffer -> Buffer
         const arrayBuffer = await incomingBlob.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-
-        // Determine file extension based on type or name
+        
         let ext = "txt";
         const fileName = incomingBlob.name || "";
         const isCSV = fileName.toLowerCase().endsWith('.csv') || incomingBlob.type === "text/csv";
@@ -101,32 +141,27 @@ export async function POST(request) {
         }
         
         const filename = `uploaded_${Date.now()}.${ext}`;
-        console.log(`📤 Preparing upload of: ${filename} with type ${incomingBlob.type}`);
+        console.log(`📤 Preparing upload of: ${filename}`);
 
-        // Create a File object instead of a Blob with name property
         const fileForUpload = new File([buffer], filename, {
           type: incomingBlob.type || "application/octet-stream"
         });
 
-        // upload
         const uploaded = await openai.files.create({
           file: fileForUpload,
           purpose: "assistants",
         });
         console.log("✅ Uploaded file ID:", uploaded.id);
         fileIds.push(uploaded.id);
-        fileTypes[uploaded.id] = { isCSV, originalName: fileName };
       }
 
-      // Apply code_interpreter to all files
       attachments = fileIds.map((id) => ({
         file_id: id,
         tools: [{ type: "code_interpreter" }],
       }));
-      console.log("📎 Attachments:", attachments);
     }
 
-    // 6. send user message (with attachments if present)
+    // 6. send user message
     console.log("✉️ Sending user message...");
     await openai.beta.threads.messages.create(threadId, {
       role: "user",
@@ -135,77 +170,131 @@ export async function POST(request) {
     });
 
     // 7. run the assistant
-    console.log("🚀 Launching assistant run...");
-    const run = await openai.beta.threads.runs.create(threadId, {
+    console.log("🚀 Launching assistant run with streaming...");
+    const run = await openai.beta.threads.runs.stream(threadId, {
       assistant_id: assistantId,
-      tool_choice:  "auto",
     });
-    console.log("🕒 Run ID:", run.id);
 
-    // 8. poll until complete
-    let status = await openai.beta.threads.runs.retrieve(threadId, run.id);
-    let tries  = 0;
-    while (
-      status.status !== "completed" &&
-      status.status !== "failed" &&
-      tries < 60
-    ) {
-      console.log(`⏳ Run status: ${status.status}`);
-      await new Promise((r) => setTimeout(r, 1000));
-      status = await openai.beta.threads.runs.retrieve(threadId, run.id);
-      tries++;
-    }
-    if (status.status !== "completed") {
-      throw new Error(`Run did not complete: ${status.status}`);
-    }
-
-    // 9. fetch the assistant's reply
-// 9. fetch the assistant's reply
-console.log("📥 Fetching assistant response...");
-const msgs = await openai.beta.threads.messages.list(threadId);
-console.log("📜 Messages list:", JSON.stringify(msgs.data, null, 2));
-
-const assistantMsg = msgs.data.find((m) => m.role === "assistant") || {};
-let responseText = "";
-let images = [];
-
-if (assistantMsg.content) {
-  for (const chunk of assistantMsg.content) {
-    if (chunk.type === "text") {
-      responseText += chunk.text.value;
-    } 
-    else if (chunk.type === "image_file") {
-      try {
-        // Get the file ID
-        const fileId = chunk.image_file.file_id;
-        
-        // Get the image content
-        const imageContent = await openai.files.content(fileId);
-        // Convert to base64
-        const buffer = Buffer.from(await imageContent.arrayBuffer());
-        const base64Image = buffer.toString('base64');
-        
-        // Add to images array
-        const imageUrl = `data:image/png;base64,${base64Image}`;
-        images.push(imageUrl);
-        
-        // Add reference in the text
-        responseText += `\n[Image ${images.length}]\n`;
-      } catch (err) {
-        console.error("Error getting image:", err);
-        responseText += "\n[Image could not be loaded]\n";
+    // 8. return streaming response
+    return new Response(
+      new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const event of run) {
+              console.log("📡 Stream event:", event.event);
+              
+              if (event.event === 'thread.message.delta') {
+                const delta = event.data.delta.content?.[0];
+                if (delta?.type === 'text' && delta.text?.value) {
+                  controller.enqueue(`data: ${JSON.stringify({
+                    type: 'text',
+                    content: delta.text.value
+                  })}\n\n`);
+                }
+              }
+              else if (event.event === 'thread.run.requires_action') {
+                console.log("🔧 Function call required");
+                const toolCalls = event.data.required_action.submit_tool_outputs.tool_calls;
+                const toolOutputs = [];
+                
+                for (const toolCall of toolCalls) {
+                  if (toolCall.function.name === "get_metrics") {
+                    try {
+                      const args = JSON.parse(toolCall.function.arguments);
+                      const bqResponse = await axios.post("http://127.0.0.1:8696/run_bq_tool", {
+                        question: `Get ${args.metric_type} data ${args.time_period ? 'for ' + args.time_period : ''}`
+                      }, {
+                        headers: { 'Content-Type': 'application/json' },
+                        timeout: 5000
+                      });
+                      
+                      toolOutputs.push({
+                        tool_call_id: toolCall.id,
+                        output: JSON.stringify(bqResponse.data.result)
+                      });
+                    } catch (error) {
+                      console.error("❌ BQ API Error:", error.message);
+                      toolOutputs.push({
+                        tool_call_id: toolCall.id,
+                        output: JSON.stringify({
+                          message: "API currently unavailable. This is dummy data for testing.",
+                          data: [
+                            {"date": "2025-01-01", "dau": 1500},
+                            {"date": "2025-01-02", "dau": 1750},
+                            {"date": "2025-01-03", "dau": 1600}
+                          ]
+                        })
+                      });
+                    }
+                  }
+                }
+                
+                if (toolOutputs.length > 0) {
+                  await openai.beta.threads.runs.submitToolOutputs(
+                    threadId, 
+                    event.data.id, 
+                    { tool_outputs: toolOutputs }
+                  );
+                }
+              }
+              else if (event.event === 'thread.run.completed') {
+                console.log("✅ Run completed, checking for images...");
+                // Get all messages, but only use the latest assistant message
+                const msgs = await openai.beta.threads.messages.list(threadId);
+                // Find the latest assistant message
+                const assistantMsgs = msgs.data.filter((m) => m.role === "assistant");
+                const latestAssistantMsg = assistantMsgs.length > 0 ? assistantMsgs[0] : null;
+                if (latestAssistantMsg && latestAssistantMsg.content) {
+                  for (const chunk of latestAssistantMsg.content) {
+                    if (chunk.type === "image_file") {
+                      try {
+                        const fileId = chunk.image_file.file_id;
+                        const imageContent = await openai.files.content(fileId);
+                        const buffer = Buffer.from(await imageContent.arrayBuffer());
+                        const base64Image = buffer.toString('base64');
+                        const imageUrl = `data:image/png;base64,${base64Image}`;
+                        controller.enqueue(`data: ${JSON.stringify({
+                          type: 'image',
+                          image: imageUrl
+                        })}\n\n`);
+                      } catch (err) {
+                        console.error("Error getting image:", err);
+                      }
+                    }
+                  }
+                }
+                controller.enqueue(`data: ${JSON.stringify({
+                  type: 'done'
+                })}\n\n`);
+              }
+              else if (event.event === 'thread.run.failed') {
+                throw new Error('Assistant run failed');
+              }
+            }
+            
+            controller.close();
+            console.log("🏁 Streaming completed");
+            
+          } catch (error) {
+            console.error("❌ Streaming error:", error);
+            controller.enqueue(`data: ${JSON.stringify({
+              type: 'error',
+              message: error.message
+            })}\n\n`);
+            controller.close();
+          }
+        }
+      }),
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        }
       }
-    }
-  }
-}
-
-console.log("✅ Assistant reply:", responseText);
-console.log(`📊 Found ${images.length} images`);
-
-return NextResponse.json({ 
-  response: responseText,
-  images: images 
-});  } catch (err) {
+    );
+    
+  } catch (err) {
     const detail =
       err?.response?.data    ||
       err?.response?.statusText ||
